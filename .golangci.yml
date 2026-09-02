@@ -1,0 +1,30 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - gosec
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - gocritic
+    - bodyclose
+    - noctx
+  settings:
+    gosec:
+      excludes:
+        - G104 # duplicates errcheck's "unhandled error" check, already tuned (below) for this codebase's best-effort Close()/cleanup calls
+        - G304 # hid.Open's path comes from hid.Discover's own /dev/hidraw* glob, never from untrusted input
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Fprintf
+        - io.Copy
+        - io.WriteString
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
