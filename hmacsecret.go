@@ -187,11 +187,28 @@ func getSession() (authenticatorClient, *ctap2.Info, error) {
 	return client, info, nil
 }
 
-// sessionPINToken returns a cached pinUvAuthToken for (rpID, permission)
-// if one was already obtained this session, prompting for the PIN and
-// fetching a fresh one otherwise. Returns (nil, nil) - not an error - if
-// info reports no PIN is set, since MakeCredential/GetAssertion both
-// accept a nil token to mean exactly that.
+// allPermissions is every permission bit this package might ever need
+// for a given rpID. A freshly-obtained token always requests all of
+// them, rather than just whichever single one the immediate caller
+// asked for, and is cached against each - so a caller that performs more
+// than one operation against the same rpID in one session (e.g. gokeys'
+// hardware-key enrollment, which immediately follows Enroll's
+// MakeCredential with a GetSecret-driven GetAssertion to compute the new
+// credential's wrapping key) only needs a single PIN entry and touch,
+// not one per operation. Harmless for a caller that only ever needs one:
+// CTAP2 authenticators check a token's granted permissions against the
+// operation being performed, not the other way around, so a
+// broader-than-needed grant changes nothing about what that single
+// operation can do.
+const allPermissions = ctap2.PermissionMakeCredential | ctap2.PermissionGetAssertion
+
+// sessionPINToken returns a cached pinUvAuthToken covering permission
+// for rpID if one was already obtained this session, prompting for the
+// PIN and fetching a fresh one (scoped to allPermissions, not just
+// permission - see allPermissions) otherwise. Returns (nil, nil) - not
+// an error - if info reports no PIN is set, since
+// MakeCredential/GetAssertion both accept a nil token to mean exactly
+// that.
 func sessionPINToken(client authenticatorClient, info *ctap2.Info, rpID string, permission int) ([]byte, error) {
 	if !info.PINSet {
 		return nil, nil
@@ -204,11 +221,12 @@ func sessionPINToken(client authenticatorClient, info *ctap2.Info, rpID string, 
 	if err != nil {
 		return nil, fmt.Errorf("reading your security key's PIN: %w", err)
 	}
-	token, err := client.GetPINToken(pin, permission, rpID)
+	token, err := client.GetPINToken(pin, allPermissions, rpID)
 	if err != nil {
 		return nil, err
 	}
-	session.tokens[key] = token
+	session.tokens[tokenKey{rpID: rpID, permission: ctap2.PermissionMakeCredential}] = token
+	session.tokens[tokenKey{rpID: rpID, permission: ctap2.PermissionGetAssertion}] = token
 	return token, nil
 }
 

@@ -17,9 +17,10 @@ type fakeClient struct {
 	info    *ctap2.Info
 	infoErr error
 
-	pinToken      []byte
-	pinTokenErr   error
-	pinTokenCalls int
+	pinToken       []byte
+	pinTokenErr    error
+	pinTokenCalls  int
+	lastPermission int // whatever GetPINToken was last called with
 
 	credID      []byte
 	makeCredErr error
@@ -32,8 +33,9 @@ type fakeClient struct {
 
 func (f *fakeClient) GetInfo() (*ctap2.Info, error) { return f.info, f.infoErr }
 
-func (f *fakeClient) GetPINToken(pin string, _ int, rpID string) ([]byte, error) {
+func (f *fakeClient) GetPINToken(pin string, permission int, rpID string) ([]byte, error) {
 	f.pinTokenCalls++
+	f.lastPermission = permission
 	if f.pinTokenErr != nil {
 		return nil, f.pinTokenErr
 	}
@@ -208,6 +210,40 @@ func TestGetSecretPINTokenScopedPerRPID(t *testing.T) {
 	}
 	if fc.pinTokenCalls != 2 {
 		t.Errorf("GetPINToken called %d times after repeating rp-a, want still 2 (cached)", fc.pinTokenCalls)
+	}
+}
+
+func TestEnrollThenGetSecretShareOnePINPrompt(t *testing.T) {
+	// gokeys' hardware-key enrollment does exactly this sequence in one
+	// process: Enroll (needs a MakeCredential-permission token) followed
+	// immediately by GetSecret (needs a GetAssertion-permission token) to
+	// compute the new credential's wrapping key. Requesting a token with
+	// every permission up front (see allPermissions) means the second
+	// call must find it already cached, instead of prompting again.
+	fc := &fakeClient{info: pinSetInfo(), credID: []byte("cred"), secret: []byte("secret")}
+	withFakeSession(t, func() (authenticatorClient, io.Closer, error) { return fc, &fakeCloser{}, nil })
+
+	origPIN := PINPrompt
+	defer func() { PINPrompt = origPIN }()
+	pinPrompts := 0
+	PINPrompt = func(string) (string, error) { pinPrompts++; return "1234", nil }
+
+	credID, err := Enroll(testRPID)
+	if err != nil {
+		t.Fatalf("Enroll: %v", err)
+	}
+	if _, err := GetSecret(testRPID, credID, []byte("salt")); err != nil {
+		t.Fatalf("GetSecret: %v", err)
+	}
+
+	if pinPrompts != 1 {
+		t.Errorf("PIN prompted %d times across Enroll+GetSecret, want 1 (shared token)", pinPrompts)
+	}
+	if fc.pinTokenCalls != 1 {
+		t.Errorf("GetPINToken called %d times, want 1 (shared token)", fc.pinTokenCalls)
+	}
+	if fc.lastPermission != allPermissions {
+		t.Errorf("GetPINToken's permission = %#x, want allPermissions (%#x)", fc.lastPermission, allPermissions)
 	}
 }
 

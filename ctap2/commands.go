@@ -9,7 +9,8 @@ import (
 
 // Permission bits for a pinUvAuthToken (see GetPINToken) - the CTAP2
 // spec's "permissions" bitfield, restricting what the resulting token
-// can authorize. gokeys only ever requests one bit at a time.
+// can authorize. Combine bits with | to request one token valid for
+// more than one operation.
 const (
 	PermissionMakeCredential = 0x01
 	PermissionGetAssertion   = 0x02

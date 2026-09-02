@@ -87,10 +87,15 @@ var OnTouchRequired = defaultOnTouchRequired // func()
 
 `Enroll`/`GetSecret` cache the connected authenticator and any PIN tokens
 obtained from it for the life of the process, so calling either
-repeatedly (e.g. trying several enrolled credentials in turn) doesn't
-re-prompt for a PIN or a fresh touch every time - only the first call in
-a process does that work. A wrong `credentialID` against the same cached
-connection still fails fast, without an extra touch prompt.
+repeatedly (e.g. trying several enrolled credentials in turn, or calling
+`Enroll` and then immediately `GetSecret` to derive the new credential's
+secret right away) doesn't re-prompt for a PIN or a fresh touch every
+time - only the first call against a given `rpID` in a process does that
+work. That first call requests a PIN token covering every operation this
+package might need (not just the one it was called for), so a mixed
+sequence like enroll-then-derive still needs only one PIN entry and one
+touch, not one per operation. A wrong `credentialID` against the same
+cached connection still fails fast, without an extra touch prompt.
 
 ## Errors
 
